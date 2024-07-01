@@ -1,9 +1,18 @@
 package queries
 
 const CREATE_LOG_TABLE = `
-CREATE TABLE logs (
+CREATE TABLE IF NOT EXISTS logs (
 	id INTEGER PRIMARY KEY NOT NULL,
 	timestamp INTEGER NOT NULL,
 	message TEXT NOT NULL
+);
+`
+
+const CREATE_META_TABLE = `
+CREATE TABLE IF NOT EXISTS metadata (
+	id INTEGER PRIMARY KEY NOT NULL,
+	log_id INTEGER NOT NULL,
+	key TEXT NOT NULL,
+	value TEXT NOT NULL
 );
 `

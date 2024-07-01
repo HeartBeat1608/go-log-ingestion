@@ -26,9 +26,11 @@ type DBConnectionManager struct {
 }
 
 func NewConnectionManager() *DBConnectionManager {
-	return &DBConnectionManager{
+	cm := &DBConnectionManager{
 		connections: make(map[string]*sqlx.DB),
 	}
+	cm.loadConnections()
+	return cm
 }
 
 func (cm *DBConnectionManager) CloseAll() {
@@ -39,7 +41,8 @@ func (cm *DBConnectionManager) CloseAll() {
 }
 
 func (cm *DBConnectionManager) getServiceDBPath(service string) string {
-	cfg := LoadConfig(service)
+	service = strings.Split(service, ".")[0]
+	cfg := GetConfig()
 	return fmt.Sprintf("%s/%s.db", cfg.DataSources, service)
 }
 
@@ -50,18 +53,17 @@ func (cm *DBConnectionManager) initService(db *sqlx.DB) error {
 		return err
 	}
 
-	stmt, err := tx.Preparex(queries.CREATE_LOG_TABLE)
-	if err != nil {
-		log.Println(err)
-		return tx.Rollback()
-	}
-	res, err := stmt.Exec()
+	_, err = tx.Exec(queries.CREATE_LOG_TABLE)
 	if err != nil {
 		log.Println(err)
 		return tx.Rollback()
 	}
 
-	log.Printf("Last Exec Result: %v\n", res)
+	_, err = tx.Exec(queries.CREATE_META_TABLE)
+	if err != nil {
+		log.Println(err)
+		return tx.Rollback()
+	}
 
 	return tx.Commit()
 }
@@ -71,14 +73,33 @@ func (cm *DBConnectionManager) openConnection(service string) (*sqlx.DB, error) 
 	return sqlx.Open(DB_DRIVER, cm.getServiceDBPath(serviceDBName))
 }
 
+func (cm *DBConnectionManager) loadConnections() {
+	cfg := GetConfig()
+	entries, err := os.ReadDir(cfg.DataSources)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, fd := range entries {
+		if fd.IsDir() {
+			continue
+		}
+
+		serviceName, _ := strings.CutSuffix(fd.Name(), ".")
+		_, _ = cm.GetConnection(serviceName)
+	}
+}
+
 func (cm *DBConnectionManager) GetConnection(service string) (*sqlx.DB, error) {
 	conn, ok := cm.connections[service]
 	if !ok {
+		log.Printf("Creating datastore for %s", service)
 		conn, err := cm.openConnection(service)
 		if err != nil {
 			return nil, ErrConnectionNotFound
 		}
 		cm.connections[service] = conn
+		err = cm.initService(conn)
 		return conn, err
 	}
 	return conn, nil
@@ -96,22 +117,4 @@ func (cm *DBConnectionManager) AddService(service string) (*sqlx.DB, error) {
 
 	cm.connections[service] = conn
 	return conn, err
-}
-
-func (cm *DBConnectionManager) GetOrAddConnection(service string) (*sqlx.DB, error) {
-	servicePath := cm.getServiceDBPath(service)
-
-	if _, err := os.Stat(servicePath); err != nil {
-		file, err := os.Create(servicePath)
-		if err != nil {
-			return nil, err
-		}
-		if err = file.Truncate(0); err != nil {
-			return nil, err
-		}
-		defer file.Close()
-		return cm.AddService(service)
-	}
-
-	return cm.GetConnection(service)
 }

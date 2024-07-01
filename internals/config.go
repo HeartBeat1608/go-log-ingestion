@@ -14,10 +14,6 @@ type Config struct {
 var appConfig *Config
 
 func LoadConfig(path string) *Config {
-	if appConfig != nil {
-		return appConfig
-	}
-
 	var config *Config
 
 	file, err := os.Open(path)
@@ -32,4 +28,12 @@ func LoadConfig(path string) *Config {
 	appConfig = config
 
 	return config
+}
+
+func GetConfig() *Config {
+	if appConfig == nil {
+		panic("config not initialized")
+	}
+
+	return appConfig
 }
